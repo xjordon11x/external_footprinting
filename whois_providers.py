@@ -14,9 +14,13 @@ for line in open(sys.argv[2]):
 	for x in result:
 #		print "X"+x
 		if "Registrar:" in x  or "OrgName:" in x and i==0:
-				print(line.split()[0]+" "+x)
-				i=1
-				dt.append([line.split()[0],x.split(":")[1]])
+			print(line.split()[0]+" "+x.split(":")[1].lstrip())
+			i=1
+			dt.append([line.split()[0],x.split(":")[1].lstrip()])
+		if "org-name:" in x and i==0:
+			print(line.split()[0]+" "+x.split(":")[1].lstrip())
+			i=1
+			dt.append([line.split()[0],x.split(":")[1].lstrip()])
 	if i==0:
 		dt.append([line.split()[0],""])
 		#except:
