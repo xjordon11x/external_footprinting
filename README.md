@@ -1,5 +1,6 @@
 # external_footprinting
 arin_footprint.py
+
 	--> Use to search for organization name from arin 
 
 	--> input organization name
@@ -17,4 +18,5 @@ dns_to_ip.py
 	--> input a file with a list of domain names  
 
 censysio_getports.py  
+
 	--> gets ports from censys
