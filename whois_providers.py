@@ -1,3 +1,5 @@
+#xjordon11x
+#Get the provider for a give ip/dns hostname
 import sys
 import whois
 import csv

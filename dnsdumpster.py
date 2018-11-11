@@ -1,3 +1,5 @@
+#xjordon11x
+#Get dnsdumpster results for a given DNS
 import requests
 import BeautifulSoup
 import requests

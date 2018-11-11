@@ -1,3 +1,5 @@
+#xjordon11x
+#get ip address from a DNS Hostname
 import socket
 import sys
 

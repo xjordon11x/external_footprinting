@@ -1,6 +1,5 @@
-#from __future__ import print_function
-#from colorama import init, Fore
-
+#xjordon11x
+#Used to quickly create a external footprint from ARIN.NET results
 from netaddr import *
 import re,csv,urllib2,ssl
 from BeautifulSoup import BeautifulSoup as BS
