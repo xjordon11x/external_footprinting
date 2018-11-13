@@ -1,8 +1,8 @@
 #xjordon11x
 #Used to quickly create a external footprint from ARIN.NET results
-from netaddr import *
+import netaddr
 import re,csv,urllib2,ssl
-from BeautifulSoup import BeautifulSoup as BS
+from bs4 import BeautifulSoup as BS
 import argparse
 import requests
 import os
@@ -13,6 +13,9 @@ from multiprocessing.dummy import Pool as ThreadPool
 import threading
 from tabulate import tabulate
 from prettytable import PrettyTable
+import json
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
 #from termcolor import colored
 
 
@@ -28,6 +31,7 @@ class Main():
     GREEN = '\033[92m'
 
     def __init__(self):
+        requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
         parser = argparse.ArgumentParser(description='Passive Service Discovery Search')
         parser.add_argument('-c', '--client', help='Name of client', required=True)
 #	searchinput = parser.add_mutually_exclusive_group(required=True)
@@ -39,7 +43,13 @@ class Main():
   #      output.add_argument('-oS', '--outputstandard', default=False, help='Outputs standard output to a .log file')
         output.add_argument('-oC', '--outputcsv', default=False, help='Outputs into a .csv file')
 
-
+        registries = parser.add_mutually_exclusive_group(required=True)
+        registries.add_argument('-wA', '--all',default=False,action='store_true',help='Search All Registries (ARIN,RIPE,APNIC,LACNIC,AFRINIC')
+        registries.add_argument('-wAr', '--arin',default=False,action='store_true',help='Search ARIN')
+        registries.add_argument('-wAf', '--afrinic',default=False,action='store_true',help='Search AFRINIC')
+        registries.add_argument('-wAp', '--apnic',default=False,action='store_true',help='Search APNIC')
+        registries.add_argument('-wR', '--ripe',default=False,action='store_true',help='Search RIPE')
+        registries.add_argument('-wL', '--lacnic',default=False,action='store_true',help='Search LACNIC')
         # adding proxy option to test within PwC offices (Shodan cert not trusted by PwC)
        # parser.add_argument('-p', '--proxy', default=False, help='Specify SOCKS5 proxy (i.e. 127.0.0.1:8123)')
         # adding proxy option to test within PwC offices (Shodan cert not trusted by PwC)
@@ -61,8 +71,23 @@ class Main():
             auth = urllib2.HTTPBasicAuthHandler()
             opener = urllib2.build_opener(prxy, auth, urllib2.HTTPHandler)
             urllib2.install_opener(opener)"""
-
-        self.arin_search(args.client)
+        client_name=args.client
+        if args.all:
+            self.arin_search(client_name)
+            self.apnic_search(client_name)
+            self.ripe_search(client_name)
+            self.afrinic_search(client_name)
+        elif args.arin:
+            self.arin_search(client_name)
+        elif args.apnic:
+            self.apnic_search(client_name)
+        elif args.ripe:
+            self.ripe_search(client_name)
+        elif args.afrinic:
+            self.afrinic_search(client_name)
+        elif args.lacnic:
+            self.lacnic_search(client_name)
+        self.print_to_file()
  
             
     def get_inputs(self,length):
@@ -134,51 +159,142 @@ class Main():
         #    response = requests.post('https://whois.arin.net/ui/query.do',headers=headers, data=data, verify=False)
         #else:
         response = requests.post('https://whois.arin.net/ui/query.do',headers=headers, data=data, verify=False)
-        res_content=BS(response.content)
+        res_content=BS(response.content,'html.parser')
         
         self.companies=res_content.findAll('td')
         num=0
-        t = PrettyTable(['Number', 'Name'])
-        for num in range(0,len(self.companies)):
-            t.add_row([num,re.sub("\n+", ",", self.companies[num].text.lstrip())])    
+        #t = PrettyTable(['Number', 'Name'])
+        #for num in range(0,len(self.companies)):
+        #    t.add_row([num,re.sub("\n+", ",", self.companies[num].text.lstrip())])    
                 #lnk=td.findAll('a')[0].get('href')
                 #print tabulate([str(num),re.sub("\n+", ",", self.companies[num].text.lstrip())])
                 
-        print (t)
-        while (inputs_correct==False):
-            inputs_correct=self.get_inputs(len(self.companies))
+        # print (t)
+        #while (inputs_correct==False):
+        #    inputs_correct=self.get_inputs(len(self.companies))
 
         #remove the unwanted results from company list
-        for remz in self.removals:
-            self.companies.remove(remz)
+        #for remz in self.removals:
+        #    self.companies.remove(remz)
 
         #print self.companies
 
         #go through each company and get network information
-        print("Getting Network Info For:")
+        print("Searching through ARIN:")
         for x in self.companies:
-            print ("\t"+self.GREEN+"[+] "+self.FNTEND+self.GREEN+re.sub("\n+", ",", x.text.lstrip())+self.FNTEND)
+            print ("\tARIN: "+self.GREEN+"[+] "+self.FNTEND+self.GREEN+re.sub("\n+", ",", x.text.lstrip())+self.FNTEND)
             link=x.findAll('a')[0].get('href')
             #print links
 
             html=urllib2.urlopen(link,context=ctx)
-            netlinks=BS(html).findAll('netref')
+            netlinks=BS(html,'html.parser').findAll('netref')
             for net in netlinks:
                 net_url=net.text.lstrip()
                 html2=urllib2.urlopen(net_url+'.html',context=ctx)
-                tds=BS(html2).findAll('td')
+                tds=BS(html2,'html.parser').findAll('td')
                 company_name=" ".join(tds[15].text.lstrip().split())
-                cidr=tds[3].text.lstrip()
+                cidr=tds[3].text.rstrip("\n")
                 ip_range=tds[1].text.lstrip()
                 if self.verbose:
                     print("\t    CIDR:"+cidr+"\n\t    IP RANGE:"+ip_range)
-                self.final_data.append([cidr,ip_range,company_name])
-
-        self.print_to_file()
+                self.final_data.append([cidr,ip_range,company_name,"ARIN"])
 
         
 
+    def apnic_search(self,client):
+        print("Searching through APNIC")
+        resp=requests.get("https://wq.apnic.net/query?searchtext="+client,verify=False)
+        parsed_json=resp.json()
+        ip_range=""
+        netname=""
+        desc=""
+        entry=[]
+        for jsonobj in parsed_json:
+            try:
+                if jsonobj['objectType'] == "inetnum":
+                    for attribute in jsonobj['attributes']:
+                        if attribute['name'] in 'inetnum':
+                            ip_range=attribute['values'][0]
+                        if attribute['name'] in 'netname':
+                            netname=attribute['values'][0]
+                        if attribute['name'] in 'descr':
+                            desc=attribute['values'][0]
+                    if desc:
+                        print ("\tAPNIC: "+self.GREEN+"[+] "+self.FNTEND+self.GREEN+" "+desc+self.FNTEND)
+                        netname=desc
+                    else:
+                        print ("\tAPNIC: "+self.GREEN+"[+] "+self.FNTEND+self.GREEN+netname+self.FNTEND)
+                    cidrip=ip_range.split("-")
+                    cidrs = netaddr.iprange_to_cidrs(cidrip[0].lstrip(), cidrip[1].lstrip())
 
+
+                    self.final_data.append([str(cidrs[0]),ip_range,netname,"APNIC"])
+            except Exception as e:
+                continue
+    def ripe_search(self,client):
+        ip_range=""
+        netname=""
+        entry=[]
+        desc=""
+        print("Searching through RIPE")
+        try:
+            resp=requests.get("https://apps.db.ripe.net/db-web-ui/api/whois/search?abuse-contact=true&flags=B&ignore404=true&managed-attributes=true&query-string="+client+"&resource-holder=true",verify=False)
+            #print resp.content
+            
+            parsed_json=resp.json()
+            #print parsed_json
+            for obj in parsed_json['objects']['object']:
+                if obj['type'] in 'inetnum':
+                    for attribute in obj['attributes']['attribute']:
+                        if attribute['name'] in 'inetnum':
+                            ip_range=attribute['value']
+                        if attribute['name'] in 'netname':
+                            netname=attribute['value']
+                        if attribute['name'] in 'descr' and client in attribute['value']:
+                            desc=attribute['value']
+                    if desc:
+                        print ("\tRIPE: "+self.GREEN+"[+] "+self.FNTEND+self.GREEN+" "+desc+self.FNTEND)
+                        netname=desc
+                    else:
+                        print ("\tRIPE: "+self.GREEN+"[+] "+self.FNTEND+self.GREEN+netname+self.FNTEND)
+                    cidrip=ip_range.split("-")
+                    cidrs = netaddr.iprange_to_cidrs(cidrip[0].lstrip(), cidrip[1].lstrip())
+
+                    self.final_data.append([str(cidrs[0]),ip_range,netname,"RIPE"])
+            #print (entry)
+        except Exception as e:
+            print e
+    def afrinic_search(self,client):
+        print("Searching through AFRINIC")
+        dt={'key':client,'sourceDatabases':'afrinic','tabs':'on'}
+        resp=requests.post('https://www.afrinic.net/whois-web/public/?lang=en',data=dt,verify=False)
+        pre=BS(resp.content,'html.parser').find_all('pre')
+        for x in pre:
+            ip_range=""
+            netname=""
+            ip6_range=""
+            ip6_cidr=""
+            for y in x.text.split("\n"):
+                y=re.sub("\:(\s+)", "^", y)
+                if 'inetnum' in y:
+                    ip_range=y.split("^")[1]
+                if 'inet6num' in y:
+                    ip6_cidr=y.split("^")[1]
+                if 'netname' in y:
+                    netname=y.split("^")[1]
+            
+            if netname!="":
+                print ("\tAFRINIC: "+self.GREEN+"[+] "+self.FNTEND+self.GREEN+netname+self.FNTEND)
+                if ip6_cidr !="":
+                    ip6_range=str(netaddr.IPNetwork(ip6_cidr).ipv6().network)+" - "+str(netaddr.IPNetwork(ip6_cidr).ipv6().broadcast)
+                    #print str(ip6_range)
+                    self.final_data.append([str(ip6_cidr),ip6_range,netname,'AFRINIC'])
+                if ip_range !="":
+                    cidrip=ip_range.split("-")
+                    cidrs = netaddr.iprange_to_cidrs(cidrip[0].lstrip(), cidrip[1].lstrip())
+                    self.final_data.append([str(cidrs[0]),ip_range,netname,'AFRINIC'])
+
+                    #print ip_range
 
 
 
